@@ -69,6 +69,12 @@ object WitnessWith extends LowPriorityWitnessWith {
   implicit def apply1[TC[_], T](t: T): WitnessWith.Lt[TC, T] = macro SingletonTypeMacros.convertInstanceImpl1[TC, T]
 }
 
+
+case class SingletonOf[T, U](value: U)
+object SingletonOf {
+  implicit def mkSingletonOf[T <: AnyRef](implicit t: T): SingletonOf[T, t.type] = SingletonOf(t)
+}
+
 trait SingletonTypeUtils extends ReprTypes {
   import c.universe.{ Try => _, _ }
   import internal._, decorators._

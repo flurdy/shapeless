@@ -18,21 +18,72 @@ package shapeless.test
 
 import scala.language.experimental.macros
 
-import scala.reflect.macros.blackbox
+import scala.reflect.macros.{ blackbox, whitebox }
 
 trait TypeTrace[T]
-
 object TypeTrace {
-  implicit def apply[T]: TypeTrace[T] = macro TypeTraceMacros.applyImpl[T]
+  implicit def apply[T]: TypeTrace[T] = macro TypeTraceMacros.mkTypeTraceImpl[T]
+}
+
+trait TypeTrace1[T[_]]
+object TypeTrace1 {
+  implicit def apply[T[_]]: TypeTrace1[T] = macro TypeTraceMacros.mkTypeTraceImpl1[T]
+}
+
+trait TypeTrace2[T[_, _]]
+object TypeTrace2 {
+  implicit def apply[T[_, _]]: TypeTrace2[T] = macro TypeTraceMacros.mkTypeTraceImpl2[T]
 }
 
 class TypeTraceMacros(val c: blackbox.Context) {
   import c.universe._
 
-  def applyImpl[T](implicit tTag: WeakTypeTag[T]): Tree = {
-    val tTpe = weakTypeOf[T]
+  def mkTypeTraceImpl[T](implicit tTag: WeakTypeTag[T]): Tree = {
+    val tTpe = tTag.tpe
     println(s"Trace: $tTpe ${tTpe.getClass.getName}")
 
     q"""new TypeTrace[$tTpe] {}"""
+  }
+
+  def mkTypeTraceImpl1[T[_]](implicit tTag: WeakTypeTag[T[_]]): Tree = {
+    val tTpe = tTag.tpe.typeConstructor
+    println(s"Trace1: $tTpe ${tTpe.getClass.getName} ${tTpe.takesTypeArgs}")
+
+    q"""new TypeTrace1[$tTpe] {}"""
+  }
+
+  def mkTypeTraceImpl2[T[_, _]](implicit tTag: WeakTypeTag[T[_, _]]): Tree = {
+    val tTpe = tTag.tpe.typeConstructor
+    println(s"Trace2: $tTpe ${tTpe.getClass.getName} ${tTpe.takesTypeArgs}")
+
+    q"""new TypeTrace2[$tTpe] {}"""
+  }
+}
+
+trait Normalize[T[_], +U[_]]
+
+object Normalize {
+  implicit def mkNormalize[T[_]]: Normalize[T, Any] = macro NormalizeMacros.mkNormalizeImpl[T]
+}
+
+class NormalizeMacros(val c: whitebox.Context) {
+  import c.universe._
+
+  def mkNormalizeImpl[T[_]](implicit tTag: WeakTypeTag[T[_]]): Tree = {
+    val tTpe = tTag.tpe.typeConstructor
+    println(s"Normalize: $tTpe ${tTpe.getClass.getName} ${tTpe.takesTypeArgs}")
+
+    val nTpe =
+      tTpe match {
+        case TypeRef(pre, sym, args) =>
+          println(s"pre: $pre ${pre.getClass.getName} sym: $sym args: $args")
+          sym.infoIn(pre)
+        case other =>
+          other
+      }
+    println(s"nTpe: $nTpe")
+    println
+
+    q"""new Normalize[$tTpe, $nTpe] {}"""
   }
 }
