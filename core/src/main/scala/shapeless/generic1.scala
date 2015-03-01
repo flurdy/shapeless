@@ -25,32 +25,48 @@ import scala.reflect.macros.{ blackbox, whitebox }
 
 import ops.{ hlist, coproduct }
 
+trait K1
+trait K1Id extends K1
+trait K1Const[T] extends K1
+trait K1TC[T[_]] extends K1
+
 trait Generic1[F[_]] {
   type R[t]
+  type R1
+
   def to[T](ft: F[T]): R[T]
   def from[T](rt: R[T]): F[T]
 }
 
-object Generic1 {
-  type Aux[F[_], R0[_]] = Generic1[F] { type R[t] >: R0[t] <: R0[t] }
+object Generic1 extends Generic10 {
+  //type Aux[F[_], R0[_]] = Generic1[F] { type R[t] = R0[t] }
+  type Aux1[F[_], R0] = Generic1[F] { type R1 = R0 }
 
-  def apply[F[_]](implicit gen: Generic1[F]): Aux[F, gen.R] = gen
+  def apply[F[_]](implicit gen: Generic1[F]): Generic1[F] { type R[t] = gen.R[t] ; type R1 = gen.R1 } = gen
 
-  implicit def id: Generic1[Id] { type R[T] = T :: HNil } =
+  implicit def materialize[T[_]]: Generic1[T] = macro Generic1Macros.materialize[T]
+}
+
+trait Generic10 extends Generic11 {
+  implicit def id: Generic1[Id] { type R[T] = T :: HNil ; type R1 = K1Id :: HNil } =
     new Generic1[Id] {
       type R[T] = T :: HNil
+      type R1 = K1Id :: HNil
+
       def to[T](t: T): R[T] = t :: HNil
       def from[T](t: R[T]): T = t.head
     }
+}
 
-  implicit def const[C]: Generic1[Const[C]#λ] { type R[T] = C :: HNil } =
+trait Generic11 {
+  implicit def const[C]: Generic1[Const[C]#λ] { type R[T] = C :: HNil ; type R1 = K1Const[C] :: HNil } =
     new Generic1[Const[C]#λ] {
       type R[T] = C :: HNil
+      type R1 = K1Const[C] :: HNil
+
       def to[T](t: C): R[T] = t :: HNil
       def from[T](t: R[T]): C = t.head
     }
-
-  implicit def materialize[T[_]]: Generic1[T] = macro Generic1Macros.materialize[T]
 }
 
 class Generic1Macros(val c: whitebox.Context) extends CaseClassMacros {
@@ -167,10 +183,27 @@ class Generic1Macros(val c: whitebox.Context) extends CaseClassMacros {
     val tpeTpt = appliedTypTree1(tpe, param1(tpe), nme)
     val reprTpt = reprTypTree1(tpe, nme)
 
+    def mkK1(t: Type, param: Type): Tree =
+      t match {
+        case TypeRef(_, _, List(param)) => tq"_root_.shapeless.K1TC[${t.typeConstructor}]"
+        case t if t =:= param => tq"_root_.shapeless.K1Id"
+        case t => tq"_root_.shapeless.K1Const[$t]"
+      }
+
+    val r1Tpe = {
+      val param = param1(tpe)
+      if(isProduct(tpe))
+        mkHListTypTree(fieldsOf(tpe).map(x => mkK1(x._2, param)))
+      else
+        mkCoproductTypTree(ctorsOf1(tpe).map(mkK1(_, param)))
+    }
+
     val clsName = TypeName(c.freshName())
     q"""
       final class $clsName extends _root_.shapeless.Generic1[$tpe] {
         type R[$nme] = $reprTpt
+        type R1 = $r1Tpe
+
         def to[$nme](ft: $tpeTpt): R[$nme] = ft match { case ..$toCases }
         def from[$nme](rt: R[$nme]): $tpeTpt = rt match { case ..$fromCases }
       }

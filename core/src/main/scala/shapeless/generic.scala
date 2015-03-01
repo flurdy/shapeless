@@ -263,6 +263,17 @@ trait CaseClassMacros extends ReprTypes {
   def mkCoproductTypTree1(items: List[Type], param: Type, arg: TypeName): Tree =
     mkCompoundTypTree1(cnilTpe, cconsTpe, items, param, arg)
 
+  def mkCompoundTypTree(nil: Type, cons: Type, items: List[Tree]): Tree =
+    items.foldRight(mkAttributedRef(nil): Tree) { case (tpe, acc) =>
+      AppliedTypeTree(mkAttributedRef(cons), List(tpe, acc))
+    }
+
+  def mkHListTypTree(items: List[Tree]): Tree =
+    mkCompoundTypTree(hnilTpe, hconsTpe, items)
+
+  def mkCoproductTypTree(items: List[Tree]): Tree =
+    mkCompoundTypTree(cnilTpe, cconsTpe, items)
+
   def unfoldCompoundTpe(compoundTpe: Type, nil: Type, cons: Type): List[Type] = {
     @tailrec
     def loop(tpe: Type, acc: List[Type]): List[Type] =

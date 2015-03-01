@@ -54,9 +54,7 @@ class LazyMacros(val c: whitebox.Context) {
   def mkLazyImpl[I](implicit iTag: WeakTypeTag[I]): Tree = {
     (c.openImplicits.headOption, iTag.tpe.dealias) match {
       case (Some(ImplicitCandidate(_, _, TypeRef(_, _, List(tpe)), _)), _) =>
-        // Replace all type variables with wildcards ...
-        val etpe = tpe.map { t => if(t.typeSymbol.isParameter) WildcardType else t.dealias }
-        LazyMacros.deriveInstance(c)(etpe)
+        LazyMacros.deriveInstance(c)(tpe.map(_.dealias))
       case (None, tpe) if tpe.typeSymbol.isParameter =>       // Workaround for presentation compiler
         q"null.asInstanceOf[_root_.shapeless.Lazy[Nothing]]"
       case (None, tpe) =>                                     // Non-implicit invocation
