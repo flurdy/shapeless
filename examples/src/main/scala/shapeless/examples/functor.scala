@@ -22,8 +22,16 @@ import ops.hlist.IsHCons
 import test._
 
 package FunctorDemoDefns {
+  object Def {
+    type Twin[T] = (T, T)
+    type OL[T] = Option[List[T]]
+  }
+  import Def._
+
   case class Foo[T](t: T, ts: List[T])
   case class Foo2[T](i: Int, t: T, ts: Tree[T], t2: T, l: List[T], o: Option[T], s: String)
+
+  case class Blah[T](p: (T, T))
 
   sealed trait Tree[T]
   case class Leaf[T](t: T) extends Tree[T]
@@ -37,6 +45,7 @@ package FunctorDemoDefns {
 object FunctorDemo extends App {
   import Functor._
   import FunctorDemoDefns._
+  import Def._
 
   Functor[Foo2]
   val foo2 = Foo2(23, "foo", Node(Leaf("quux"), Leaf("wibble")), "bar", List("foo", "bar", "quux"), None, "blah blah")
@@ -51,9 +60,13 @@ object FunctorDemo extends App {
   Functor[Leaf]
   Functor[Tree]
 
+  //Functor[Twin]
+  //Functor[OL]
+
   Functor[Bar0]
   Functor[Bar1]
   Functor[Bar]
+  Functor[Blah]
 
   FunctorAux[HNil]
   FunctorAux[K1Const[Int] :: HNil]
@@ -135,8 +148,14 @@ object Functor extends Functor0 {
       far: Lazy[FunctorAux[R1]]
     ): Functor[F] =
     new Functor[F] {
-      def map[A, B](fa: F[A])(f: A => B): F[B] = ???
-        //gen.from(far.value.map(gen.to(fa))(f))
+      def map[A, B](fa: F[A])(f: A => B): F[B] = {
+        val ra: gen.R[A] = gen.to(fa)
+        val faa: far.value.F[A] = ra.asInstanceOf[far.value.F[A]]
+        val fb: far.value.F[B] = far.value.map(faa)(f)
+        val rb: gen.R[B] = fb.asInstanceOf[gen.R[B]]
+        val ff: F[B] = gen.from(rb)
+        ff
+      }
     }
 
   // Functor syntax
@@ -148,14 +167,12 @@ object Functor extends Functor0 {
   }
 }
 
-trait Functor0 extends Functor1 {
+trait Functor0 {
   implicit val idFunctor: Functor[Id] =
     new Functor[Id] {
       def map[A, B](a: A)(f: A => B): B = f(a)
     }
-}
 
-trait Functor1 {
   implicit def constFunctor[T]: Functor[Const[T]#λ] =
     new Functor[Const[T]#λ] {
       def map[A, B](t: T)(f: A => B): T = t
@@ -172,23 +189,9 @@ object FunctorAux {
 
   def apply[F1](implicit f: Lazy[FunctorAux[F1]]): Aux[F1, f.value.F] = f.value
 
-  implicit def functorP[L <: HList](implicit fp: FunctorP[L]): Aux[L, fp.F] = ???
-  implicit def functorC[C <: Coproduct](implicit fc: FunctorC[C]): Aux[C, fc.F] = ???
-}
-
-trait FunctorP[F1] {
-  type F[_] <: HList
-  def map[A, B](fa: F[A])(f: A => B): F[B]
-}
-
-object FunctorP {
-  type Aux[F1, F0[_] <: HList] = FunctorP[F1] { type F[t] = F0[t] }
-
-  def apply[F1](implicit f: Lazy[FunctorP[F1]]): Aux[F1, f.value.F] = f.value
-
   // Base case for deriving products
-  implicit def hnil: FunctorP[HNil] { type F[t] = HNil } =
-    new FunctorP[HNil] {
+  implicit def hnil: FunctorAux[HNil] { type F[t] = HNil } =
+    new FunctorAux[HNil] {
       type F[t] = HNil
       def map[A, B](fa: HNil)(f: A => B): HNil = fa
     }
@@ -197,28 +200,17 @@ object FunctorP {
   implicit def hcons[H <: K1, T <: HList]
     (implicit
       fh: Lazy[FunctorK[H]],
-      ft: Lazy[FunctorP[T]]
-    ): FunctorP[H :: T] { type F[t] = fh.value.F[t] :: ft.value.F[t] } =
-    new FunctorP[H :: T] {
+      ft: Lazy[FunctorAux[T] { type F[_] <: HList }]
+    ): FunctorAux[H :: T] { type F[t] = fh.value.F[t] :: ft.value.F[t] } =
+    new FunctorAux[H :: T] {
       type F[t] = fh.value.F[t] :: ft.value.F[t]
       def map[A, B](fa: F[A])(f: A => B): F[B] =
         fh.value.F.map(fa.head)(f) :: ft.value.map(fa.tail)(f)
     }
-}
-
-trait FunctorC[F1] {
-  type F[_] <: Coproduct
-  def map[A, B](fa: F[A])(f: A => B): F[B]
-}
-
-object FunctorC {
-  type Aux[F1, F0[_] <: Coproduct] = FunctorC[F1] { type F[t] = F0[t] }
-
-  def apply[F1](implicit f: Lazy[FunctorC[F1]]): Aux[F1, f.value.F] = f.value
 
   // Base case for deriving coproducts
-  implicit def cnil: FunctorC[CNil] { type F[t] = CNil } =
-    new FunctorC[CNil] {
+  implicit def cnil: FunctorAux[CNil] { type F[t] = CNil } =
+    new FunctorAux[CNil] {
       type F[t] = CNil
       def map[A, B](fa: CNil)(f: A => B): CNil = fa
     }
@@ -227,9 +219,9 @@ object FunctorC {
   implicit def ccons[H <: K1, T <: Coproduct]
     (implicit
       fh: Lazy[FunctorK[H]],
-      ft: Lazy[FunctorC[T]]
-    ): FunctorC[H :+: T] { type F[t] = fh.value.F[t] :+: ft.value.F[t] } =
-    new FunctorC[H :+: T] {
+      ft: Lazy[FunctorAux[T] { type F[_] <: Coproduct }]
+    ): FunctorAux[H :+: T] { type F[t] = fh.value.F[t] :+: ft.value.F[t] } =
+    new FunctorAux[H :+: T] {
       type F[t] = fh.value.F[t] :+: ft.value.F[t]
       def map[A, B](fa: F[A])(f: A => B): F[B] =
         fa match {
@@ -254,20 +246,20 @@ object FunctorK {
   implicit def baseFunctorK[F0[_]](implicit ff: Lazy[Functor[F0]]): Aux[K1TC[F0], F0] =
       new FunctorK[K1TC[F0]] {
         type F[t] = F0[t]
-        val F = Functor[F]
+        val F = ff.value
       }
 
   // FunctorK for Id
   implicit val idFunctorK: Aux[K1Id, Id] =
     new FunctorK[K1Id] {
       type F[t] = t
-      val F = Functor[F]
+      val F = Functor.idFunctor
     }
 
   // FunctorK for Const[T]#λ
   implicit def constFunctorK[T]: Aux[K1Const[T], Const[T]#λ] =
     new FunctorK[K1Const[T]] {
       type F[t] = T
-      val F = Functor[F]
+      val F = Functor.constFunctor[T]
     }
 }
