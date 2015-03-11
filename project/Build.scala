@@ -95,6 +95,7 @@ object ShapelessBuild extends Build {
 
       scalacOptions       := Seq(
         "-Ydependent-method-types",
+        "-Xmax-classfile-name","240",
         "-deprecation",
         "-unchecked"),
 
